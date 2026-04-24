@@ -1,24 +1,69 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db, auth } from "@/lib/firebase";
 import { useCartStore } from "@/store/cartStore";
 import { Home, Play, Search, ShoppingCart, User, Star, Zap, Tag, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { signOut, onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 
 type Product = { id: string; name: string; price: number; imageUrl: string; description: string; sellerId: string; category?: string; offer?: number; };
 type Reel = { id: string; videoUrl: string; caption: string; sellerName: string; productName: string; price: number; productImage: string; likes: number; };
+type Order = { id: string; items: any[]; total: number; status: string; createdAt: any; paymentMethod: string; address: string; userId?: string; };
+const BANNERS = [
+  { bg: "from-purple-900 via-purple-700 to-purple-500", badge: "🔥 LIMITED TIME OFFER", title: "Up to 70% OFF", sub: "On top products today only!", btn: "Shop Now →" },
+  { bg: "from-blue-900 via-blue-700 to-blue-500", badge: "⚡ FLASH SALE", title: "New Arrivals!", sub: "Fresh products added daily", btn: "Explore Now →" },
+  { bg: "from-green-900 via-green-700 to-green-500", badge: "🚚 FREE DELIVERY", title: "Order Above ₹499", sub: "Get free delivery on all orders", btn: "Shop Now →" },
+  { bg: "from-pink-900 via-pink-700 to-pink-500", badge: "🎁 SPECIAL OFFER", title: "Buy 2 Get 1 Free", sub: "On selected products today", btn: "Grab Deal →" },
+];
 
 export default function BuyerFeed() {
-  const [tab, setTab] = useState<"home" | "reels" | "search" | "cart" | "profile">("home");
+  const [tab, setTab] = useState<"home" | "reels" | "search" | "cart" | "profile" | "orders">("home");
   const [products, setProducts] = useState<Product[]>([]);
   const [reels, setReels] = useState<Reel[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [bannerIndex, setBannerIndex] = useState(0);
+  const [userEmail, setUserEmail] = useState("");
+  const [userName, setUserName] = useState("User");
+  const [isAdmin, setIsAdmin] = useState(false);
   const { addItem, items, total, removeItem, clearCart } = useCartStore();
   const router = useRouter();
+  const bannerTimer = useRef<NodeJS.Timeout | null>(null);
+
+  // Auto-rotate banners every 3 seconds
+  useEffect(() => {
+    bannerTimer.current = setInterval(() => {
+      setBannerIndex((prev) => (prev + 1) % BANNERS.length);
+    }, 3000);
+    return () => { if (bannerTimer.current) clearInterval(bannerTimer.current); };
+  }, []);
+
+  // Get current user info
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        router.push("/auth/login");
+        return;
+      }
+      setUserEmail(user.email ?? "");
+      setIsAdmin(user.email === "Palt51419@gmail.com");
+      const snap = await getDoc(doc(db, "users", user.uid));
+      setUserName(snap.data()?.name ?? "User");
+
+      // Fetch this user's orders
+      const oSnap = await getDocs(collection(db, "orders"));
+      const myOrders = oSnap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as Order))
+        .filter((o) => o.userId === user.uid || o.userId === "guest");
+      setOrders(myOrders);
+    });
+    return unsub;
+  }, []);
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -40,6 +85,13 @@ export default function BuyerFeed() {
     toast.success(`${p.name} added to cart! 🛒`);
   };
 
+  const handleLogout = async () => {
+    await signOut(auth);
+    clearCart();
+    toast.success("Logged out!");
+    router.push("/");
+  };
+
   const filtered = products.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
   );
@@ -48,14 +100,14 @@ export default function BuyerFeed() {
     selectedCategory === "All" || p.category === selectedCategory
   );
 
+  const banner = BANNERS[bannerIndex];
+
   return (
     <div className="bg-white text-zinc-900 min-h-screen flex flex-col w-full">
 
       {/* Top navbar */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-zinc-200 shadow-sm px-4 py-3 flex items-center gap-3">
         <span className="text-xl font-bold text-zinc-900 flex-shrink-0">Com<span className="text-purple-500">ence</span></span>
-
-        {/* Google-style search bar */}
         <div className="flex-1 flex items-center gap-2 bg-zinc-100 border border-zinc-300 hover:border-zinc-400 rounded-full px-4 py-2 shadow-sm transition">
           <Search className="w-4 h-4 text-zinc-400 flex-shrink-0" />
           <input
@@ -74,7 +126,6 @@ export default function BuyerFeed() {
             <button onClick={() => setSearch("")} className="text-zinc-400 hover:text-zinc-600 text-lg leading-none">×</button>
           )}
         </div>
-
         <div className="flex items-center gap-2 flex-shrink-0">
           <Link href="/auth/signup?role=seller"
             className="hidden md:block bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-3 py-1.5 rounded-full transition">
@@ -94,7 +145,6 @@ export default function BuyerFeed() {
         </div>
       </nav>
 
-      {/* Main layout */}
       <div className="flex mt-14 min-h-screen">
 
         {/* PC Sidebar */}
@@ -112,7 +162,7 @@ export default function BuyerFeed() {
               <span>{t.label}</span>
             </button>
           ))}
-          <div className="mt-auto">
+          <div className="mt-auto flex flex-col gap-2">
             <Link href="/auth/signup?role=seller"
               className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold bg-purple-100 text-purple-600 hover:bg-purple-600 hover:text-white transition">
               <span>🏪</span> Become a Seller
@@ -126,14 +176,21 @@ export default function BuyerFeed() {
           {/* HOME TAB */}
           {tab === "home" && (
             <div>
-              {/* Banner */}
-              <div className="bg-gradient-to-r from-purple-900 via-purple-700 to-purple-500 mx-4 mt-4 rounded-2xl p-6 md:p-8">
-                <p className="text-yellow-400 text-xs font-bold mb-1">🔥 LIMITED TIME OFFER</p>
-                <p className="text-white text-2xl md:text-3xl font-bold mb-1">Up to 70% OFF</p>
-                <p className="text-purple-200 text-sm mb-4">On top products today only!</p>
-                <button className="bg-white text-purple-700 text-sm font-bold px-6 py-2 rounded-full">
-                  Shop Now →
+              {/* Auto-rotating Banner */}
+              <div className={`bg-gradient-to-r ${banner.bg} mx-4 mt-4 rounded-2xl p-6 md:p-8 transition-all duration-700 relative overflow-hidden`}>
+                <p className="text-yellow-300 text-xs font-bold mb-1">{banner.badge}</p>
+                <p className="text-white text-2xl md:text-3xl font-bold mb-1">{banner.title}</p>
+                <p className="text-white/80 text-sm mb-4">{banner.sub}</p>
+                <button className="bg-white text-zinc-900 text-sm font-bold px-6 py-2 rounded-full">
+                  {banner.btn}
                 </button>
+                {/* Dots */}
+                <div className="absolute bottom-3 right-4 flex gap-1.5">
+                  {BANNERS.map((_, i) => (
+                    <button key={i} onClick={() => setBannerIndex(i)}
+                      className={`w-2 h-2 rounded-full transition-all ${i === bannerIndex ? "bg-white w-4" : "bg-white/40"}`} />
+                  ))}
+                </div>
               </div>
 
               {/* Categories */}
@@ -405,48 +462,108 @@ export default function BuyerFeed() {
             </div>
           )}
 
+          {/* ORDERS TAB */}
+          {tab === "orders" && (
+            <div className="px-4 mt-4 max-w-2xl mx-auto">
+              <div className="flex items-center gap-3 mb-4">
+                <button onClick={() => setTab("profile")} className="text-zinc-400 hover:text-zinc-900">←</button>
+                <p className="text-zinc-900 font-bold text-xl">My Orders 📦</p>
+              </div>
+              {orders.length === 0 ? (
+                <div className="text-center mt-20">
+                  <p className="text-5xl mb-3">📦</p>
+                  <p className="text-zinc-400 text-lg mb-2">No orders yet!</p>
+                  <button onClick={() => setTab("home")}
+                    className="mt-4 bg-purple-600 text-white px-8 py-3 rounded-full font-bold">
+                    Start Shopping
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {orders.map((order) => (
+                    <div key={order.id} className="bg-white border border-zinc-200 rounded-2xl p-4 shadow-sm">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-zinc-500 text-xs">Order #{order.id.slice(0, 8).toUpperCase()}</p>
+                        <span className="bg-green-100 text-green-600 text-xs font-bold px-3 py-1 rounded-full">
+                          {order.status ?? "Confirmed"}
+                        </span>
+                      </div>
+                      {order.items?.map((item: any, i: number) => (
+                        <div key={i} className="flex items-center gap-3 mb-2">
+                          <img src={item.image} alt={item.name} className="w-12 h-12 rounded-xl object-cover bg-zinc-100" />
+                          <div className="flex-1">
+                            <p className="text-zinc-900 text-sm font-semibold">{item.name}</p>
+                            <p className="text-zinc-400 text-xs">Qty: {item.quantity}</p>
+                          </div>
+                          <p className="text-purple-600 font-bold text-sm">₹{item.price * item.quantity}</p>
+                        </div>
+                      ))}
+                      <div className="border-t border-zinc-100 pt-3 mt-2 flex justify-between">
+                        <span className="text-zinc-400 text-sm">Total</span>
+                        <span className="text-zinc-900 font-bold">₹{order.total}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* PROFILE TAB */}
           {tab === "profile" && (
             <div className="px-4 mt-6 max-w-md mx-auto">
               <div className="text-center mb-6">
                 <div className="w-24 h-24 rounded-full bg-purple-600 flex items-center justify-center text-4xl font-bold text-white mx-auto mb-3">
-                  T
+                  {userName[0]?.toUpperCase() ?? "U"}
                 </div>
-                <p className="text-zinc-900 font-bold text-xl">My Account</p>
-                <p className="text-zinc-400 text-sm">Manage your profile</p>
+                <p className="text-zinc-900 font-bold text-xl">{userName}</p>
+                <p className="text-zinc-400 text-sm">{userEmail}</p>
               </div>
               <div className="flex flex-col gap-3">
-                <div className="bg-white border border-zinc-200 rounded-2xl p-4 text-zinc-900 flex items-center gap-3 shadow-sm">
+                {/* My Orders */}
+                <button onClick={() => setTab("orders")}
+                  className="bg-white border border-zinc-200 rounded-2xl p-4 text-zinc-900 flex items-center gap-3 shadow-sm hover:border-purple-400 transition w-full text-left">
                   <span className="text-2xl">📦</span>
                   <div>
                     <p className="font-semibold">My Orders</p>
-                    <p className="text-zinc-400 text-xs">Track your orders</p>
+                    <p className="text-zinc-400 text-xs">Track and view your orders</p>
                   </div>
-                </div>
-                <Link href="/auth/signup?role=seller"
-                  className="bg-white border border-zinc-200 rounded-2xl p-4 text-zinc-900 flex items-center gap-3 hover:border-purple-400 transition shadow-sm">
+                  <span className="ml-auto text-zinc-400">→</span>
+                </button>
+
+                {/* Become Seller */}
+                <Link href="/seller/dashboard"
+                  className="bg-white border border-zinc-200 rounded-2xl p-4 text-zinc-900 flex items-center gap-3 shadow-sm hover:border-purple-400 transition">
                   <span className="text-2xl">🏪</span>
                   <div>
-                    <p className="font-semibold">Become a Seller</p>
-                    <p className="text-zinc-400 text-xs">Start selling your products</p>
+                    <p className="font-semibold">Seller Dashboard</p>
+                    <p className="text-zinc-400 text-xs">Manage your products & reels</p>
                   </div>
+                  <span className="ml-auto text-zinc-400">→</span>
                 </Link>
-                <Link href="/admin/dashboard"
-                  className="bg-white border border-zinc-200 rounded-2xl p-4 text-zinc-900 flex items-center gap-3 hover:border-purple-400 transition shadow-sm">
-                  <span className="text-2xl">⚙️</span>
-                  <div>
-                    <p className="font-semibold">Admin Panel</p>
-                    <p className="text-zinc-400 text-xs">Manage the platform</p>
-                  </div>
-                </Link>
-                <Link href="/"
-                  className="bg-red-50 border border-red-200 rounded-2xl p-4 text-red-500 flex items-center gap-3 hover:bg-red-100 transition">
+
+                {/* Admin Panel — only for admin email */}
+                {isAdmin && (
+                  <Link href="/admin/dashboard"
+                    className="bg-purple-50 border border-purple-200 rounded-2xl p-4 text-purple-700 flex items-center gap-3 hover:bg-purple-100 transition">
+                    <span className="text-2xl">⚙️</span>
+                    <div>
+                      <p className="font-semibold">Admin Panel</p>
+                      <p className="text-purple-400 text-xs">Full platform control</p>
+                    </div>
+                    <span className="ml-auto text-purple-400">→</span>
+                  </Link>
+                )}
+
+                {/* Logout */}
+                <button onClick={handleLogout}
+                  className="bg-red-50 border border-red-200 rounded-2xl p-4 text-red-500 flex items-center gap-3 hover:bg-red-100 transition w-full text-left">
                   <span className="text-2xl">🚪</span>
                   <div>
                     <p className="font-semibold">Logout</p>
                     <p className="text-red-300 text-xs">Sign out of your account</p>
                   </div>
-                </Link>
+                </button>
               </div>
             </div>
           )}
