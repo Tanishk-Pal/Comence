@@ -1,24 +1,27 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
-import { collection, getDocs, orderBy, query } from "firebase/firestore";
+import { collection, getDocs, orderBy, query, doc, updateDoc } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { useCartStore } from "@/store/cartStore";
-import { Home, Play, Search, ShoppingCart, User, Star, Zap, Tag, Trash2 } from "lucide-react";
+import { Home, Play, Search, ShoppingCart, User, Star, Zap, Tag, Trash2, Settings } from "lucide-react";
 import toast from "react-hot-toast";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signOut, onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { getDoc } from "firebase/firestore";
 
 type Product = { id: string; name: string; price: number; imageUrl: string; description: string; sellerId: string; category?: string; offer?: number; };
 type Reel = { id: string; videoUrl: string; caption: string; sellerName: string; productName: string; price: number; productImage: string; likes: number; };
 type Order = { id: string; items: any[]; total: number; status: string; createdAt: any; paymentMethod: string; address: string; userId?: string; };
+
 const BANNERS = [
   { bg: "from-purple-900 via-purple-700 to-purple-500", badge: "🔥 LIMITED TIME OFFER", title: "Up to 70% OFF", sub: "On top products today only!", btn: "Shop Now →" },
   { bg: "from-blue-900 via-blue-700 to-blue-500", badge: "⚡ FLASH SALE", title: "New Arrivals!", sub: "Fresh products added daily", btn: "Explore Now →" },
   { bg: "from-green-900 via-green-700 to-green-500", badge: "🚚 FREE DELIVERY", title: "Order Above ₹499", sub: "Get free delivery on all orders", btn: "Shop Now →" },
   { bg: "from-pink-900 via-pink-700 to-pink-500", badge: "🎁 SPECIAL OFFER", title: "Buy 2 Get 1 Free", sub: "On selected products today", btn: "Grab Deal →" },
 ];
+
+const ADMIN_EMAIL = "Palt51419@gmail.com";
 
 export default function BuyerFeed() {
   const [tab, setTab] = useState<"home" | "reels" | "search" | "cart" | "profile" | "orders">("home");
@@ -34,6 +37,7 @@ export default function BuyerFeed() {
   const { addItem, items, total, removeItem, clearCart } = useCartStore();
   const router = useRouter();
   const bannerTimer = useRef<NodeJS.Timeout | null>(null);
+  const reelContainerRef = useRef<HTMLDivElement>(null);
 
   // Auto-rotate banners every 3 seconds
   useEffect(() => {
@@ -46,16 +50,11 @@ export default function BuyerFeed() {
   // Get current user info
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        router.push("/auth/login");
-        return;
-      }
+      if (!user) { router.push("/auth/login"); return; }
       setUserEmail(user.email ?? "");
-      setIsAdmin(user.email === "Palt51419@gmail.com");
+      setIsAdmin(user.email === ADMIN_EMAIL);
       const snap = await getDoc(doc(db, "users", user.uid));
       setUserName(snap.data()?.name ?? "User");
-
-      // Fetch this user's orders
       const oSnap = await getDocs(collection(db, "orders"));
       const myOrders = oSnap.docs
         .map((d) => ({ id: d.id, ...d.data() } as Order))
@@ -92,6 +91,13 @@ export default function BuyerFeed() {
     router.push("/");
   };
 
+  const handleCancelOrder = async (orderId: string) => {
+    if (!confirm("Cancel this order?")) return;
+    await updateDoc(doc(db, "orders", orderId), { status: "cancelled" });
+    setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, status: "cancelled" } : o));
+    toast.success("Order cancelled!");
+  };
+
   const filtered = products.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
   );
@@ -99,6 +105,12 @@ export default function BuyerFeed() {
   const filteredProducts = products.filter((p) =>
     selectedCategory === "All" || p.category === selectedCategory
   );
+
+  // Top offered products for banner showcase (sorted by offer % descending)
+  const topOfferedProducts = [...products]
+    .filter((p) => p.offer && p.offer > 0)
+    .sort((a, b) => (b.offer ?? 0) - (a.offer ?? 0))
+    .slice(0, 5);
 
   const banner = BANNERS[bannerIndex];
 
@@ -108,11 +120,13 @@ export default function BuyerFeed() {
       {/* Top navbar */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-zinc-200 shadow-sm px-4 py-3 flex items-center gap-3">
         <span className="text-xl font-bold text-zinc-900 flex-shrink-0">Com<span className="text-purple-500">ence</span></span>
+
+        {/* Search bar */}
         <div className="flex-1 flex items-center gap-2 bg-zinc-100 border border-zinc-300 hover:border-zinc-400 rounded-full px-4 py-2 shadow-sm transition">
           <Search className="w-4 h-4 text-zinc-400 flex-shrink-0" />
           <input
             type="text"
-            placeholder="Search products, categories..."
+            placeholder="Search products..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => {
@@ -126,10 +140,12 @@ export default function BuyerFeed() {
             <button onClick={() => setSearch("")} className="text-zinc-400 hover:text-zinc-600 text-lg leading-none">×</button>
           )}
         </div>
+
         <div className="flex items-center gap-2 flex-shrink-0">
-          <Link href="/auth/signup?role=seller"
-            className="hidden md:block bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-3 py-1.5 rounded-full transition">
-            Sell Your Product
+          {/* Fix 5 — Sell button visible on mobile too */}
+          <Link href="/seller/dashboard"
+            className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-3 py-1.5 rounded-full transition">
+            Sell
           </Link>
           <button onClick={() => setTab("cart")} className="relative">
             <ShoppingCart className="w-6 h-6 text-zinc-700" />
@@ -148,7 +164,7 @@ export default function BuyerFeed() {
       <div className="flex mt-14 min-h-screen">
 
         {/* PC Sidebar */}
-        <div className="hidden md:flex flex-col fixed left-0 top-14 bottom-0 w-56 bg-white border-r border-zinc-200 p-4 gap-1 z-40">
+        <div className="hidden md:flex flex-col fixed left-0 top-14 bottom-0 w-56 bg-white border-r border-zinc-200 p-4 gap-1 z-40 overflow-y-auto">
           {[
             { id: "home", emoji: "🏠", label: "Home" },
             { id: "reels", emoji: "🎬", label: "Reels" },
@@ -162,11 +178,20 @@ export default function BuyerFeed() {
               <span>{t.label}</span>
             </button>
           ))}
-          <div className="mt-auto flex flex-col gap-2">
-            <Link href="/auth/signup?role=seller"
+
+          <div className="mt-auto flex flex-col gap-2 pt-4">
+            <Link href="/seller/dashboard"
               className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold bg-purple-100 text-purple-600 hover:bg-purple-600 hover:text-white transition">
               <span>🏪</span> Become a Seller
             </Link>
+            {/* Fix 2 — Admin tab in sidebar only for admin email */}
+            {isAdmin && (
+              <Link href="/admin/dashboard"
+                className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold bg-zinc-900 text-white hover:bg-zinc-700 transition">
+                <Settings className="w-4 h-4" />
+                <span>Admin Panel</span>
+              </Link>
+            )}
           </div>
         </div>
 
@@ -184,14 +209,48 @@ export default function BuyerFeed() {
                 <button className="bg-white text-zinc-900 text-sm font-bold px-6 py-2 rounded-full">
                   {banner.btn}
                 </button>
-                {/* Dots */}
                 <div className="absolute bottom-3 right-4 flex gap-1.5">
                   {BANNERS.map((_, i) => (
                     <button key={i} onClick={() => setBannerIndex(i)}
-                      className={`w-2 h-2 rounded-full transition-all ${i === bannerIndex ? "bg-white w-4" : "bg-white/40"}`} />
+                      className={`h-2 rounded-full transition-all ${i === bannerIndex ? "bg-white w-4" : "bg-white/40 w-2"}`} />
                   ))}
                 </div>
               </div>
+
+              {/* Fix 4 — Top Offered Products auto showcase */}
+              {topOfferedProducts.length > 0 && (
+                <div className="px-4 mt-6">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-xl">🏷️</span>
+                    <p className="text-zinc-900 font-bold text-lg">Best Offers Right Now</p>
+                    <span className="ml-auto bg-red-100 text-red-600 text-xs font-bold px-2 py-1 rounded-full">
+                      HOT 🔥
+                    </span>
+                  </div>
+                  <div className="flex gap-3 overflow-x-auto pb-2">
+                    {topOfferedProducts.map((p) => (
+                      <Link href={`/buyer/product/${p.id}`} key={p.id}
+                        className="flex-shrink-0 w-44 bg-gradient-to-br from-red-50 to-orange-50 border border-red-200 rounded-2xl overflow-hidden hover:shadow-lg transition">
+                        <div className="relative">
+                          <img src={p.imageUrl} alt={p.name} className="w-full h-28 object-cover" />
+                          <span className="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                            {p.offer}% OFF
+                          </span>
+                        </div>
+                        <div className="p-2">
+                          <p className="text-zinc-900 text-xs font-semibold line-clamp-1">{p.name}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <p className="text-purple-600 font-bold text-sm">
+                              ₹{Math.round(p.price - (p.price * (p.offer ?? 0) / 100))}
+                            </p>
+                            <p className="text-zinc-400 text-xs line-through">₹{p.price}</p>
+                          </div>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Categories */}
               <div className="px-4 mt-6">
@@ -218,11 +277,8 @@ export default function BuyerFeed() {
                     <Link href={`/buyer/product/${p.id}`} key={p.id}>
                       <div className="bg-white border border-zinc-200 rounded-2xl p-3 hover:border-purple-400 hover:shadow-md transition">
                         <div className="relative mb-2">
-                          <img src={p.imageUrl} alt={p.name}
-                            className="w-full h-24 md:h-32 object-cover rounded-xl" />
-                          <span className="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                            SALE
-                          </span>
+                          <img src={p.imageUrl} alt={p.name} className="w-full h-24 md:h-32 object-cover rounded-xl" />
+                          <span className="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">SALE</span>
                         </div>
                         <p className="text-zinc-900 text-xs font-semibold line-clamp-1">{p.name}</p>
                         <p className="text-purple-600 text-sm font-bold">₹{p.price}</p>
@@ -241,15 +297,13 @@ export default function BuyerFeed() {
                 <div className="flex items-center gap-2 mb-3">
                   <Play className="w-5 h-5 text-purple-600" />
                   <p className="text-zinc-900 font-bold text-lg">Trending Reels</p>
-                  <button onClick={() => setTab("reels")}
-                    className="ml-auto text-purple-600 text-sm font-semibold">See all →</button>
+                  <button onClick={() => setTab("reels")} className="ml-auto text-purple-600 text-sm font-semibold">See all →</button>
                 </div>
                 <div className="flex gap-3 overflow-x-auto pb-2">
                   {reels.slice(0, 8).map((r) => (
                     <button key={r.id} onClick={() => setTab("reels")}
                       className="relative min-w-32 h-48 rounded-2xl overflow-hidden flex-shrink-0 bg-zinc-100 hover:scale-105 transition shadow-sm">
-                      <video src={r.videoUrl} muted playsInline
-                        className="w-full h-full object-cover" />
+                      <video src={r.videoUrl} muted playsInline className="w-full h-full object-cover" />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end p-2">
                         <div>
                           <p className="text-white text-xs font-semibold line-clamp-1">{r.productName}</p>
@@ -278,36 +332,25 @@ export default function BuyerFeed() {
                     <div key={p.id} className="bg-white border border-zinc-200 rounded-2xl overflow-hidden hover:shadow-lg hover:border-purple-300 transition">
                       <div className="relative">
                         <Link href={`/buyer/product/${p.id}`}>
-                          <img src={p.imageUrl} alt={p.name}
-                            className="w-full h-44 object-cover hover:opacity-90 transition" />
+                          <img src={p.imageUrl} alt={p.name} className="w-full h-44 object-cover hover:opacity-90 transition" />
                         </Link>
-                        <span className="absolute top-2 left-2 bg-green-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                          In Stock
-                        </span>
+                        <span className="absolute top-2 left-2 bg-green-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">In Stock</span>
                         {p.offer && (
-                          <span className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                            {p.offer}% OFF
-                          </span>
+                          <span className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{p.offer}% OFF</span>
                         )}
                       </div>
                       <div className="p-3">
                         <p className="text-zinc-900 text-sm font-semibold line-clamp-1">{p.name}</p>
                         <p className="text-zinc-400 text-xs line-clamp-1 mb-1">{p.description}</p>
                         <div className="flex gap-0.5 mb-2">
-                          {[1, 2, 3, 4, 5].map((s) => (
-                            <Star key={s} className="w-3 h-3 text-yellow-400 fill-yellow-400" />
-                          ))}
+                          {[1, 2, 3, 4, 5].map((s) => <Star key={s} className="w-3 h-3 text-yellow-400 fill-yellow-400" />)}
                         </div>
                         <p className="text-purple-600 font-bold text-base mb-2">₹{p.price}</p>
                         <div className="flex gap-1.5">
                           <button onClick={() => handleAddToCart(p)}
-                            className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold py-2 rounded-xl transition">
-                            🛒 Cart
-                          </button>
+                            className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold py-2 rounded-xl transition">🛒 Cart</button>
                           <button onClick={() => handleBuyNow(p)}
-                            className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2 rounded-xl transition">
-                            ⚡ Buy
-                          </button>
+                            className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2 rounded-xl transition">⚡ Buy</button>
                         </div>
                       </div>
                     </div>
@@ -317,19 +360,30 @@ export default function BuyerFeed() {
             </div>
           )}
 
-          {/* REELS TAB */}
+          {/* REELS TAB — Fix 6: smooth scroll on mobile */}
           {tab === "reels" && (
             <div className="flex justify-center">
-              <div className="w-full max-w-sm snap-y snap-mandatory overflow-y-scroll"
-                style={{ height: "calc(100vh - 56px)" }}>
+              <div
+                ref={reelContainerRef}
+                className="w-full max-w-sm overflow-y-scroll"
+                style={{
+                  height: "calc(100vh - 56px)",
+                  scrollSnapType: "y mandatory",
+                  WebkitOverflowScrolling: "touch",
+                  overscrollBehavior: "contain",
+                }}>
                 {reels.length === 0 && (
-                  <div className="flex items-center justify-center h-full text-zinc-500">
-                    No reels yet!
-                  </div>
+                  <div className="flex items-center justify-center h-full text-zinc-500">No reels yet!</div>
                 )}
                 {reels.map((reel) => (
-                  <div key={reel.id} className="relative snap-start bg-zinc-900"
-                    style={{ height: "calc(100vh - 56px)" }}>
+                  <div key={reel.id}
+                    className="relative bg-zinc-900"
+                    style={{
+                      height: "calc(100vh - 56px)",
+                      scrollSnapAlign: "start",
+                      scrollSnapStop: "always",
+                      flexShrink: 0,
+                    }}>
                     <video src={reel.videoUrl} autoPlay loop muted playsInline
                       className="w-full h-full object-cover" />
                     <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
@@ -337,8 +391,7 @@ export default function BuyerFeed() {
                       <p className="text-white font-bold text-sm mb-1">@{reel.sellerName}</p>
                       <p className="text-zinc-300 text-xs mb-3">{reel.caption}</p>
                       <div className="flex items-center gap-3 bg-white/10 backdrop-blur rounded-2xl p-3">
-                        <img src={reel.productImage} alt={reel.productName}
-                          className="w-12 h-12 rounded-xl object-cover" />
+                        <img src={reel.productImage} alt={reel.productName} className="w-12 h-12 rounded-xl object-cover" />
                         <div className="flex-1">
                           <p className="text-white text-sm font-bold">{reel.productName}</p>
                           <p className="text-purple-400 font-bold">₹{reel.price}</p>
@@ -357,24 +410,18 @@ export default function BuyerFeed() {
             </div>
           )}
 
-          {/* SEARCH TAB */}
+          {/* SEARCH TAB — Fix 3: redirect to /search */}
           {tab === "search" && (
             <div className="px-4 mt-4">
-              <div className="flex items-center gap-2 bg-zinc-100 border border-zinc-300 rounded-full px-4 py-2.5 mb-4 shadow-sm">
+              <form onSubmit={(e) => { e.preventDefault(); if (search.trim()) router.push(`/search?q=${encodeURIComponent(search)}`); }}
+                className="flex items-center gap-2 bg-zinc-100 border border-zinc-300 rounded-full px-4 py-2.5 mb-4 shadow-sm">
                 <Search className="w-4 h-4 text-zinc-400 flex-shrink-0" />
                 <input value={search} onChange={(e) => setSearch(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && search.trim()) router.push(`/search?q=${encodeURIComponent(search)}`);
-                  }}
                   placeholder="Search products..."
                   className="flex-1 bg-transparent text-sm text-zinc-900 placeholder-zinc-400 outline-none" />
-                {search && (
-                  <button onClick={() => setSearch("")} className="text-zinc-400 text-lg leading-none">×</button>
-                )}
-              </div>
-              {search && (
-                <p className="text-zinc-400 text-sm mb-4">{filtered.length} results for "{search}"</p>
-              )}
+                <button type="submit" className="bg-purple-600 text-white text-xs font-bold px-3 py-1 rounded-full">Go</button>
+              </form>
+              {search && <p className="text-zinc-400 text-sm mb-4">{filtered.length} results for "{search}"</p>}
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                 {(search ? filtered : products).map((p) => (
                   <div key={p.id} className="bg-white border border-zinc-200 rounded-2xl overflow-hidden hover:shadow-md hover:border-purple-300 transition">
@@ -386,13 +433,9 @@ export default function BuyerFeed() {
                       <p className="text-purple-600 font-bold">₹{p.price}</p>
                       <div className="flex gap-1.5 mt-2">
                         <button onClick={() => handleAddToCart(p)}
-                          className="flex-1 bg-zinc-100 text-zinc-800 text-xs font-bold py-2 rounded-xl hover:bg-zinc-200 transition">
-                          🛒 Cart
-                        </button>
+                          className="flex-1 bg-zinc-100 text-zinc-800 text-xs font-bold py-2 rounded-xl hover:bg-zinc-200 transition">🛒 Cart</button>
                         <button onClick={() => handleBuyNow(p)}
-                          className="flex-1 bg-purple-600 text-white text-xs font-bold py-2 rounded-xl hover:bg-purple-700 transition">
-                          ⚡ Buy
-                        </button>
+                          className="flex-1 bg-purple-600 text-white text-xs font-bold py-2 rounded-xl hover:bg-purple-700 transition">⚡ Buy</button>
                       </div>
                     </div>
                   </div>
@@ -409,10 +452,7 @@ export default function BuyerFeed() {
                 <div className="text-center mt-20">
                   <p className="text-6xl mb-3">🛒</p>
                   <p className="text-zinc-400 text-lg mb-2">Your cart is empty!</p>
-                  <button onClick={() => setTab("home")}
-                    className="mt-4 bg-purple-600 text-white px-8 py-3 rounded-full font-bold">
-                    Start Shopping
-                  </button>
+                  <button onClick={() => setTab("home")} className="mt-4 bg-purple-600 text-white px-8 py-3 rounded-full font-bold">Start Shopping</button>
                 </div>
               ) : (
                 <div className="md:flex gap-6">
@@ -425,8 +465,7 @@ export default function BuyerFeed() {
                           <p className="text-purple-600 font-bold text-lg">₹{item.price}</p>
                           <p className="text-zinc-400 text-xs">Qty: {item.quantity}</p>
                         </div>
-                        <button onClick={() => removeItem(item.id)}
-                          className="text-red-400 hover:text-red-500 self-start mt-1">
+                        <button onClick={() => removeItem(item.id)} className="text-red-400 hover:text-red-500 self-start mt-1">
                           <Trash2 className="w-5 h-5" />
                         </button>
                       </div>
@@ -439,21 +478,13 @@ export default function BuyerFeed() {
                   <div className="md:w-72">
                     <div className="bg-white border border-zinc-200 rounded-2xl p-4 mb-4 shadow-sm">
                       <p className="text-zinc-900 font-bold mb-3">Order Summary</p>
-                      <div className="flex justify-between text-zinc-400 text-sm mb-2">
-                        <span>Subtotal ({items.length} items)</span>
-                        <span>₹{total()}</span>
-                      </div>
-                      <div className="flex justify-between text-zinc-400 text-sm mb-2">
-                        <span>Delivery</span>
-                        <span className="text-green-600 font-semibold">FREE</span>
-                      </div>
+                      <div className="flex justify-between text-zinc-400 text-sm mb-2"><span>Subtotal</span><span>₹{total()}</span></div>
+                      <div className="flex justify-between text-zinc-400 text-sm mb-2"><span>Delivery</span><span className="text-green-600 font-semibold">FREE</span></div>
                       <div className="border-t border-zinc-200 pt-3 mt-3 flex justify-between text-zinc-900 font-bold text-lg">
-                        <span>Total</span>
-                        <span className="text-purple-600">₹{total()}</span>
+                        <span>Total</span><span className="text-purple-600">₹{total()}</span>
                       </div>
                     </div>
-                    <Link href="/buyer/checkout"
-                      className="block w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 rounded-2xl text-center text-lg transition">
+                    <Link href="/buyer/checkout" className="block w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 rounded-2xl text-center text-lg transition">
                       Checkout ⚡
                     </Link>
                   </div>
@@ -462,7 +493,7 @@ export default function BuyerFeed() {
             </div>
           )}
 
-          {/* ORDERS TAB */}
+          {/* ORDERS TAB — Fix 1: Cancel button */}
           {tab === "orders" && (
             <div className="px-4 mt-4 max-w-2xl mx-auto">
               <div className="flex items-center gap-3 mb-4">
@@ -473,19 +504,19 @@ export default function BuyerFeed() {
                 <div className="text-center mt-20">
                   <p className="text-5xl mb-3">📦</p>
                   <p className="text-zinc-400 text-lg mb-2">No orders yet!</p>
-                  <button onClick={() => setTab("home")}
-                    className="mt-4 bg-purple-600 text-white px-8 py-3 rounded-full font-bold">
-                    Start Shopping
-                  </button>
+                  <button onClick={() => setTab("home")} className="mt-4 bg-purple-600 text-white px-8 py-3 rounded-full font-bold">Start Shopping</button>
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
                   {orders.map((order) => (
                     <div key={order.id} className="bg-white border border-zinc-200 rounded-2xl p-4 shadow-sm">
                       <div className="flex items-center justify-between mb-3">
-                        <p className="text-zinc-500 text-xs">Order #{order.id.slice(0, 8).toUpperCase()}</p>
-                        <span className="bg-green-100 text-green-600 text-xs font-bold px-3 py-1 rounded-full">
-                          {order.status ?? "Confirmed"}
+                        <p className="text-zinc-500 text-xs font-semibold">Order #{order.id.slice(0, 8).toUpperCase()}</p>
+                        <span className={`text-xs font-bold px-3 py-1 rounded-full ${order.status === "cancelled"
+                            ? "bg-red-100 text-red-600"
+                            : "bg-green-100 text-green-600"
+                          }`}>
+                          {order.status === "cancelled" ? "❌ Cancelled" : "✅ Confirmed"}
                         </span>
                       </div>
                       {order.items?.map((item: any, i: number) => (
@@ -498,9 +529,14 @@ export default function BuyerFeed() {
                           <p className="text-purple-600 font-bold text-sm">₹{item.price * item.quantity}</p>
                         </div>
                       ))}
-                      <div className="border-t border-zinc-100 pt-3 mt-2 flex justify-between">
-                        <span className="text-zinc-400 text-sm">Total</span>
-                        <span className="text-zinc-900 font-bold">₹{order.total}</span>
+                      <div className="border-t border-zinc-100 pt-3 mt-2 flex justify-between items-center">
+                        <span className="text-zinc-900 font-bold">Total: ₹{order.total}</span>
+                        {order.status !== "cancelled" && (
+                          <button onClick={() => handleCancelOrder(order.id)}
+                            className="bg-red-50 hover:bg-red-100 text-red-500 text-xs font-bold px-4 py-2 rounded-xl border border-red-200 transition">
+                            Cancel Order
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -520,49 +556,30 @@ export default function BuyerFeed() {
                 <p className="text-zinc-400 text-sm">{userEmail}</p>
               </div>
               <div className="flex flex-col gap-3">
-                {/* My Orders */}
                 <button onClick={() => setTab("orders")}
                   className="bg-white border border-zinc-200 rounded-2xl p-4 text-zinc-900 flex items-center gap-3 shadow-sm hover:border-purple-400 transition w-full text-left">
                   <span className="text-2xl">📦</span>
-                  <div>
-                    <p className="font-semibold">My Orders</p>
-                    <p className="text-zinc-400 text-xs">Track and view your orders</p>
-                  </div>
+                  <div><p className="font-semibold">My Orders</p><p className="text-zinc-400 text-xs">Track and view your orders</p></div>
                   <span className="ml-auto text-zinc-400">→</span>
                 </button>
-
-                {/* Become Seller */}
                 <Link href="/seller/dashboard"
                   className="bg-white border border-zinc-200 rounded-2xl p-4 text-zinc-900 flex items-center gap-3 shadow-sm hover:border-purple-400 transition">
                   <span className="text-2xl">🏪</span>
-                  <div>
-                    <p className="font-semibold">Seller Dashboard</p>
-                    <p className="text-zinc-400 text-xs">Manage your products & reels</p>
-                  </div>
+                  <div><p className="font-semibold">Seller Dashboard</p><p className="text-zinc-400 text-xs">Manage your products & reels</p></div>
                   <span className="ml-auto text-zinc-400">→</span>
                 </Link>
-
-                {/* Admin Panel — only for admin email */}
                 {isAdmin && (
                   <Link href="/admin/dashboard"
-                    className="bg-purple-50 border border-purple-200 rounded-2xl p-4 text-purple-700 flex items-center gap-3 hover:bg-purple-100 transition">
+                    className="bg-zinc-900 border border-zinc-700 rounded-2xl p-4 text-white flex items-center gap-3 hover:bg-zinc-800 transition">
                     <span className="text-2xl">⚙️</span>
-                    <div>
-                      <p className="font-semibold">Admin Panel</p>
-                      <p className="text-purple-400 text-xs">Full platform control</p>
-                    </div>
-                    <span className="ml-auto text-purple-400">→</span>
+                    <div><p className="font-semibold">Admin Panel</p><p className="text-zinc-400 text-xs">Full platform control</p></div>
+                    <span className="ml-auto text-zinc-400">→</span>
                   </Link>
                 )}
-
-                {/* Logout */}
                 <button onClick={handleLogout}
                   className="bg-red-50 border border-red-200 rounded-2xl p-4 text-red-500 flex items-center gap-3 hover:bg-red-100 transition w-full text-left">
                   <span className="text-2xl">🚪</span>
-                  <div>
-                    <p className="font-semibold">Logout</p>
-                    <p className="text-red-300 text-xs">Sign out of your account</p>
-                  </div>
+                  <div><p className="font-semibold">Logout</p><p className="text-red-300 text-xs">Sign out of your account</p></div>
                 </button>
               </div>
             </div>
