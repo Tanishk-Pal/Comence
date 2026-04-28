@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
-import { collection, getDocs, orderBy, query, doc, updateDoc } from "firebase/firestore";
+import { collection, getDocs, orderBy, query, doc, updateDoc, getDoc, increment } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { useCartStore } from "@/store/cartStore";
 import { Home, Play, Search, ShoppingCart, User, Star, Zap, Tag, Trash2, Settings } from "lucide-react";
@@ -8,7 +8,6 @@ import toast from "react-hot-toast";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signOut, onAuthStateChanged } from "firebase/auth";
-import { getDoc } from "firebase/firestore";
 
 type Product = { id: string; name: string; price: number; imageUrl: string; description: string; sellerId: string; category?: string; offer?: number; };
 type Reel = { id: string; videoUrl: string; caption: string; sellerName: string; productName: string; price: number; productImage: string; likes: number; };
@@ -34,12 +33,14 @@ export default function BuyerFeed() {
   const [userEmail, setUserEmail] = useState("");
   const [userName, setUserName] = useState("User");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [likedReels, setLikedReels] = useState<Set<string>>(new Set());
   const { addItem, items, total, removeItem, clearCart } = useCartStore();
   const router = useRouter();
   const bannerTimer = useRef<NodeJS.Timeout | null>(null);
   const reelContainerRef = useRef<HTMLDivElement>(null);
+  const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
 
-  // Auto-rotate banners every 3 seconds
+  // Auto-rotate banners
   useEffect(() => {
     bannerTimer.current = setInterval(() => {
       setBannerIndex((prev) => (prev + 1) % BANNERS.length);
@@ -47,10 +48,15 @@ export default function BuyerFeed() {
     return () => { if (bannerTimer.current) clearInterval(bannerTimer.current); };
   }, []);
 
-  // Get current user info
+  // Auth listener
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) { router.push("/auth/login"); return; }
+      if (!user) {
+        setUserEmail("");
+        setUserName("Guest");
+        setIsAdmin(false);
+        return;
+      }
       setUserEmail(user.email ?? "");
       setIsAdmin(user.email === ADMIN_EMAIL);
       const snap = await getDoc(doc(db, "users", user.uid));
@@ -64,6 +70,7 @@ export default function BuyerFeed() {
     return unsub;
   }, []);
 
+  // Fetch products and reels
   useEffect(() => {
     const fetchAll = async () => {
       const pSnap = await getDocs(collection(db, "products"));
@@ -74,14 +81,55 @@ export default function BuyerFeed() {
     fetchAll();
   }, []);
 
+  // Auto play/pause videos on scroll
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          const video = entry.target as HTMLVideoElement;
+          if (entry.isIntersecting) {
+            video.play().catch(() => { });
+          } else {
+            video.pause();
+          }
+        });
+      },
+      { threshold: 0.6 }
+    );
+    videoRefs.current.forEach((v) => { if (v) observer.observe(v); });
+    return () => observer.disconnect();
+  }, [reels]);
+
   const handleBuyNow = (p: Product) => {
+    if (!userEmail) { router.push("/auth/login"); toast.error("Please login first!"); return; }
     addItem({ id: p.id, name: p.name, price: p.price, image: p.imageUrl, quantity: 1 });
     router.push("/buyer/checkout");
   };
 
   const handleAddToCart = (p: Product) => {
+    if (!userEmail) { router.push("/auth/login"); toast.error("Please login to add to cart!"); return; }
     addItem({ id: p.id, name: p.name, price: p.price, image: p.imageUrl, quantity: 1 });
     toast.success(`${p.name} added to cart! 🛒`);
+  };
+
+  const handleLikeReel = async (reel: Reel) => {
+    if (likedReels.has(reel.id)) return;
+    setLikedReels((prev) => new Set([...prev, reel.id]));
+    await updateDoc(doc(db, "reels", reel.id), { likes: increment(1) });
+    toast("❤️ Liked!", { duration: 800 });
+  };
+
+  const handleShareReel = (reel: Reel) => {
+    if (navigator.share) {
+      navigator.share({
+        title: reel.productName,
+        text: reel.caption,
+        url: window.location.href,
+      });
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      toast.success("Link copied! 🔗");
+    }
   };
 
   const handleLogout = async () => {
@@ -106,7 +154,6 @@ export default function BuyerFeed() {
     selectedCategory === "All" || p.category === selectedCategory
   );
 
-  // Top offered products for banner showcase (sorted by offer % descending)
   const topOfferedProducts = [...products]
     .filter((p) => p.offer && p.offer > 0)
     .sort((a, b) => (b.offer ?? 0) - (a.offer ?? 0))
@@ -142,7 +189,6 @@ export default function BuyerFeed() {
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Fix 5 — Sell button visible on mobile too */}
           <Link href="/seller/dashboard"
             className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-3 py-1.5 rounded-full transition">
             Sell
@@ -155,9 +201,16 @@ export default function BuyerFeed() {
               </span>
             )}
           </button>
-          <button onClick={() => setTab("profile")}>
-            <User className="w-6 h-6 text-zinc-500 hover:text-zinc-900" />
-          </button>
+          {userEmail ? (
+            <button onClick={() => setTab("profile")}>
+              <User className="w-6 h-6 text-zinc-500 hover:text-zinc-900" />
+            </button>
+          ) : (
+            <Link href="/auth/login"
+              className="bg-zinc-900 hover:bg-zinc-700 text-white text-xs font-semibold px-3 py-1.5 rounded-full transition">
+              Login
+            </Link>
+          )}
         </div>
       </nav>
 
@@ -178,13 +231,11 @@ export default function BuyerFeed() {
               <span>{t.label}</span>
             </button>
           ))}
-
           <div className="mt-auto flex flex-col gap-2 pt-4">
             <Link href="/seller/dashboard"
               className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold bg-purple-100 text-purple-600 hover:bg-purple-600 hover:text-white transition">
               <span>🏪</span> Become a Seller
             </Link>
-            {/* Fix 2 — Admin tab in sidebar only for admin email */}
             {isAdmin && (
               <Link href="/admin/dashboard"
                 className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold bg-zinc-900 text-white hover:bg-zinc-700 transition">
@@ -206,9 +257,7 @@ export default function BuyerFeed() {
                 <p className="text-yellow-300 text-xs font-bold mb-1">{banner.badge}</p>
                 <p className="text-white text-2xl md:text-3xl font-bold mb-1">{banner.title}</p>
                 <p className="text-white/80 text-sm mb-4">{banner.sub}</p>
-                <button className="bg-white text-zinc-900 text-sm font-bold px-6 py-2 rounded-full">
-                  {banner.btn}
-                </button>
+                <button className="bg-white text-zinc-900 text-sm font-bold px-6 py-2 rounded-full">{banner.btn}</button>
                 <div className="absolute bottom-3 right-4 flex gap-1.5">
                   {BANNERS.map((_, i) => (
                     <button key={i} onClick={() => setBannerIndex(i)}
@@ -217,15 +266,13 @@ export default function BuyerFeed() {
                 </div>
               </div>
 
-              {/* Fix 4 — Top Offered Products auto showcase */}
+              {/* Best Offers */}
               {topOfferedProducts.length > 0 && (
                 <div className="px-4 mt-6">
                   <div className="flex items-center gap-2 mb-3">
                     <span className="text-xl">🏷️</span>
                     <p className="text-zinc-900 font-bold text-lg">Best Offers Right Now</p>
-                    <span className="ml-auto bg-red-100 text-red-600 text-xs font-bold px-2 py-1 rounded-full">
-                      HOT 🔥
-                    </span>
+                    <span className="ml-auto bg-red-100 text-red-600 text-xs font-bold px-2 py-1 rounded-full">HOT 🔥</span>
                   </div>
                   <div className="flex gap-3 overflow-x-auto pb-2">
                     {topOfferedProducts.map((p) => (
@@ -233,16 +280,12 @@ export default function BuyerFeed() {
                         className="flex-shrink-0 w-44 bg-gradient-to-br from-red-50 to-orange-50 border border-red-200 rounded-2xl overflow-hidden hover:shadow-lg transition">
                         <div className="relative">
                           <img src={p.imageUrl} alt={p.name} className="w-full h-28 object-cover" />
-                          <span className="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                            {p.offer}% OFF
-                          </span>
+                          <span className="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">{p.offer}% OFF</span>
                         </div>
                         <div className="p-2">
                           <p className="text-zinc-900 text-xs font-semibold line-clamp-1">{p.name}</p>
                           <div className="flex items-center gap-2 mt-1">
-                            <p className="text-purple-600 font-bold text-sm">
-                              ₹{Math.round(p.price - (p.price * (p.offer ?? 0) / 100))}
-                            </p>
+                            <p className="text-purple-600 font-bold text-sm">₹{Math.round(p.price - (p.price * (p.offer ?? 0) / 100))}</p>
                             <p className="text-zinc-400 text-xs line-through">₹{p.price}</p>
                           </div>
                         </div>
@@ -270,7 +313,7 @@ export default function BuyerFeed() {
                 <div className="flex items-center gap-2 mb-3">
                   <Zap className="w-5 h-5 text-yellow-500" />
                   <p className="text-zinc-900 font-bold text-lg">Flash Deals</p>
-                  <span className="ml-auto text-purple-600 text-sm cursor-pointer font-semibold">See all →</span>
+                  <span className="ml-auto text-purple-600 text-sm font-semibold">See all →</span>
                 </div>
                 <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-7 gap-3">
                   {products.slice(0, 7).map((p) => (
@@ -322,9 +365,7 @@ export default function BuyerFeed() {
               <div className="px-4 mt-6 pb-8">
                 <div className="flex items-center gap-2 mb-3">
                   <Tag className="w-5 h-5 text-green-600" />
-                  <p className="text-zinc-900 font-bold text-lg">
-                    {selectedCategory === "All" ? "All Products" : selectedCategory}
-                  </p>
+                  <p className="text-zinc-900 font-bold text-lg">{selectedCategory === "All" ? "All Products" : selectedCategory}</p>
                   <span className="text-zinc-400 text-sm">({filteredProducts.length})</span>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -360,7 +401,7 @@ export default function BuyerFeed() {
             </div>
           )}
 
-          {/* REELS TAB — Fix 6: smooth scroll on mobile */}
+          {/* REELS TAB */}
           {tab === "reels" && (
             <div className="flex justify-center">
               <div
@@ -375,42 +416,68 @@ export default function BuyerFeed() {
                 {reels.length === 0 && (
                   <div className="flex items-center justify-center h-full text-zinc-500">No reels yet!</div>
                 )}
-                {reels.map((reel) => (
-                  <div key={reel.id}
-                    className="relative bg-zinc-900"
-                    style={{
-                      height: "calc(100vh - 56px)",
-                      scrollSnapAlign: "start",
-                      scrollSnapStop: "always",
-                      flexShrink: 0,
-                    }}>
-                    <video src={reel.videoUrl} autoPlay loop muted playsInline
-                      className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
-                    <div className="absolute bottom-0 left-0 right-0 p-4">
-                      <p className="text-white font-bold text-sm mb-1">@{reel.sellerName}</p>
-                      <p className="text-zinc-300 text-xs mb-3">{reel.caption}</p>
-                      <div className="flex items-center gap-3 bg-white/10 backdrop-blur rounded-2xl p-3">
-                        <img src={reel.productImage} alt={reel.productName} className="w-12 h-12 rounded-xl object-cover" />
-                        <div className="flex-1">
-                          <p className="text-white text-sm font-bold">{reel.productName}</p>
-                          <p className="text-purple-400 font-bold">₹{reel.price}</p>
-                        </div>
-                        <button onClick={() => {
-                          addItem({ id: reel.id, name: reel.productName, price: reel.price, image: reel.productImage, quantity: 1 });
-                          router.push("/buyer/checkout");
-                        }} className="bg-purple-600 text-white text-xs font-bold px-4 py-2 rounded-xl">
-                          Buy ⚡
+                {reels.map((reel, index) => {
+                  const isLiked = likedReels.has(reel.id);
+                  return (
+                    <div key={reel.id} className="relative bg-zinc-900"
+                      style={{ height: "calc(100vh - 56px)", scrollSnapAlign: "start", scrollSnapStop: "always", flexShrink: 0 }}>
+                      <video
+                        ref={(el) => { videoRefs.current[index] = el; }}
+                        src={reel.videoUrl}
+                        loop muted playsInline
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
+
+                      {/* Right side buttons */}
+                      <div className="absolute right-3 bottom-48 flex flex-col items-center gap-5 z-10">
+                        <button onClick={() => handleLikeReel(reel)} className="flex flex-col items-center gap-1">
+                          <div className={`p-3 rounded-full transition ${isLiked ? "bg-red-500" : "bg-black/50"}`}>
+                            <span className="text-2xl">{isLiked ? "❤️" : "🤍"}</span>
+                          </div>
+                          <span className="text-white text-xs font-bold">{reel.likes + (isLiked ? 1 : 0)}</span>
+                        </button>
+                        <button onClick={() => handleShareReel(reel)} className="flex flex-col items-center gap-1">
+                          <div className="p-3 rounded-full bg-black/50">
+                            <span className="text-2xl">↗️</span>
+                          </div>
+                          <span className="text-white text-xs font-bold">Share</span>
+                        </button>
+                        <button className="flex flex-col items-center gap-1">
+                          <div className="p-3 rounded-full bg-black/50">
+                            <span className="text-2xl">💬</span>
+                          </div>
+                          <span className="text-white text-xs font-bold">Chat</span>
                         </button>
                       </div>
+
+                      {/* Bottom info */}
+                      <div className="absolute bottom-0 left-0 right-0 p-4 z-10">
+                        <p className="text-white font-bold text-sm mb-1">@{reel.sellerName}</p>
+                        <p className="text-zinc-300 text-xs mb-3">{reel.caption}</p>
+                        <div className="flex items-center gap-3 bg-white/10 backdrop-blur rounded-2xl p-3">
+                          <img src={reel.productImage} alt={reel.productName} className="w-12 h-12 rounded-xl object-cover" />
+                          <div className="flex-1">
+                            <p className="text-white text-sm font-bold">{reel.productName}</p>
+                            <p className="text-purple-400 font-bold">₹{reel.price}</p>
+                          </div>
+                          <button onClick={() => {
+                            if (!userEmail) { router.push("/auth/login"); return; }
+                            addItem({ id: reel.id, name: reel.productName, price: reel.price, image: reel.productImage, quantity: 1 });
+                            router.push("/buyer/checkout");
+                          }} className="bg-purple-600 text-white text-xs font-bold px-4 py-2 rounded-xl">
+                            Buy ⚡
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
 
-          {/* SEARCH TAB — Fix 3: redirect to /search */}
+          {/* SEARCH TAB */}
           {tab === "search" && (
             <div className="px-4 mt-4">
               <form onSubmit={(e) => { e.preventDefault(); if (search.trim()) router.push(`/search?q=${encodeURIComponent(search)}`); }}
@@ -493,7 +560,7 @@ export default function BuyerFeed() {
             </div>
           )}
 
-          {/* ORDERS TAB — Fix 1: Cancel button */}
+          {/* ORDERS TAB */}
           {tab === "orders" && (
             <div className="px-4 mt-4 max-w-2xl mx-auto">
               <div className="flex items-center gap-3 mb-4">
@@ -512,10 +579,7 @@ export default function BuyerFeed() {
                     <div key={order.id} className="bg-white border border-zinc-200 rounded-2xl p-4 shadow-sm">
                       <div className="flex items-center justify-between mb-3">
                         <p className="text-zinc-500 text-xs font-semibold">Order #{order.id.slice(0, 8).toUpperCase()}</p>
-                        <span className={`text-xs font-bold px-3 py-1 rounded-full ${order.status === "cancelled"
-                            ? "bg-red-100 text-red-600"
-                            : "bg-green-100 text-green-600"
-                          }`}>
+                        <span className={`text-xs font-bold px-3 py-1 rounded-full ${order.status === "cancelled" ? "bg-red-100 text-red-600" : "bg-green-100 text-green-600"}`}>
                           {order.status === "cancelled" ? "❌ Cancelled" : "✅ Confirmed"}
                         </span>
                       </div>
@@ -548,46 +612,57 @@ export default function BuyerFeed() {
           {/* PROFILE TAB */}
           {tab === "profile" && (
             <div className="px-4 mt-6 max-w-md mx-auto">
-              <div className="text-center mb-6">
-                <div className="w-24 h-24 rounded-full bg-purple-600 flex items-center justify-center text-4xl font-bold text-white mx-auto mb-3">
-                  {userName[0]?.toUpperCase() ?? "U"}
+              {!userEmail ? (
+                <div className="text-center mt-20">
+                  <p className="text-5xl mb-3">👤</p>
+                  <p className="text-zinc-900 font-bold text-xl mb-2">Not logged in</p>
+                  <p className="text-zinc-400 text-sm mb-6">Login to view your profile and orders</p>
+                  <Link href="/auth/login" className="bg-purple-600 text-white px-8 py-3 rounded-full font-bold">Login</Link>
                 </div>
-                <p className="text-zinc-900 font-bold text-xl">{userName}</p>
-                <p className="text-zinc-400 text-sm">{userEmail}</p>
-              </div>
-              <div className="flex flex-col gap-3">
-                <button onClick={() => setTab("orders")}
-                  className="bg-white border border-zinc-200 rounded-2xl p-4 text-zinc-900 flex items-center gap-3 shadow-sm hover:border-purple-400 transition w-full text-left">
-                  <span className="text-2xl">📦</span>
-                  <div><p className="font-semibold">My Orders</p><p className="text-zinc-400 text-xs">Track and view your orders</p></div>
-                  <span className="ml-auto text-zinc-400">→</span>
-                </button>
-                <Link href="/seller/dashboard"
-                  className="bg-white border border-zinc-200 rounded-2xl p-4 text-zinc-900 flex items-center gap-3 shadow-sm hover:border-purple-400 transition">
-                  <span className="text-2xl">🏪</span>
-                  <div><p className="font-semibold">Seller Dashboard</p><p className="text-zinc-400 text-xs">Manage your products & reels</p></div>
-                  <span className="ml-auto text-zinc-400">→</span>
-                </Link>
-                {isAdmin && (
-                  <Link href="/admin/dashboard"
-                    className="bg-zinc-900 border border-zinc-700 rounded-2xl p-4 text-white flex items-center gap-3 hover:bg-zinc-800 transition">
-                    <span className="text-2xl">⚙️</span>
-                    <div><p className="font-semibold">Admin Panel</p><p className="text-zinc-400 text-xs">Full platform control</p></div>
-                    <span className="ml-auto text-zinc-400">→</span>
-                  </Link>
-                )}
-                <button onClick={handleLogout}
-                  className="bg-red-50 border border-red-200 rounded-2xl p-4 text-red-500 flex items-center gap-3 hover:bg-red-100 transition w-full text-left">
-                  <span className="text-2xl">🚪</span>
-                  <div><p className="font-semibold">Logout</p><p className="text-red-300 text-xs">Sign out of your account</p></div>
-                </button>
-              </div>
+              ) : (
+                <>
+                  <div className="text-center mb-6">
+                    <div className="w-24 h-24 rounded-full bg-purple-600 flex items-center justify-center text-4xl font-bold text-white mx-auto mb-3">
+                      {userName[0]?.toUpperCase() ?? "U"}
+                    </div>
+                    <p className="text-zinc-900 font-bold text-xl">{userName}</p>
+                    <p className="text-zinc-400 text-sm">{userEmail}</p>
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    <button onClick={() => setTab("orders")}
+                      className="bg-white border border-zinc-200 rounded-2xl p-4 text-zinc-900 flex items-center gap-3 shadow-sm hover:border-purple-400 transition w-full text-left">
+                      <span className="text-2xl">📦</span>
+                      <div><p className="font-semibold">My Orders</p><p className="text-zinc-400 text-xs">Track and view your orders</p></div>
+                      <span className="ml-auto text-zinc-400">→</span>
+                    </button>
+                    <Link href="/seller/dashboard"
+                      className="bg-white border border-zinc-200 rounded-2xl p-4 text-zinc-900 flex items-center gap-3 shadow-sm hover:border-purple-400 transition">
+                      <span className="text-2xl">🏪</span>
+                      <div><p className="font-semibold">Seller Dashboard</p><p className="text-zinc-400 text-xs">Manage your products & reels</p></div>
+                      <span className="ml-auto text-zinc-400">→</span>
+                    </Link>
+                    {isAdmin && (
+                      <Link href="/admin/dashboard"
+                        className="bg-zinc-900 border border-zinc-700 rounded-2xl p-4 text-white flex items-center gap-3 hover:bg-zinc-800 transition">
+                        <span className="text-2xl">⚙️</span>
+                        <div><p className="font-semibold">Admin Panel</p><p className="text-zinc-400 text-xs">Monitor & control full platform</p></div>
+                        <span className="ml-auto text-zinc-400">→</span>
+                      </Link>
+                    )}
+                    <button onClick={handleLogout}
+                      className="bg-red-50 border border-red-200 rounded-2xl p-4 text-red-500 flex items-center gap-3 hover:bg-red-100 transition w-full text-left">
+                      <span className="text-2xl">🚪</span>
+                      <div><p className="font-semibold">Logout</p><p className="text-red-300 text-xs">Sign out of your account</p></div>
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
       </div>
 
-      {/* Bottom navigation — mobile only */}
+      {/* Bottom nav — mobile only */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-zinc-200 flex justify-around py-3 z-50 shadow-lg">
         {[
           { id: "home", icon: <Home className="w-6 h-6" />, label: "Home" },
