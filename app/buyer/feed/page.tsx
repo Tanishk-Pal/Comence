@@ -20,7 +20,7 @@ const BANNERS = [
   { bg: "from-pink-900 via-pink-700 to-pink-500", badge: "🎁 SPECIAL OFFER", title: "Buy 2 Get 1 Free", sub: "On selected products today", btn: "Grab Deal →" },
 ];
 
-const ADMIN_EMAIL = "Palt51419@gmail.com";
+const ADMIN_EMAIL = "palt51419@gmail.com";
 
 export default function BuyerFeed() {
   const [tab, setTab] = useState<"home" | "reels" | "search" | "cart" | "profile" | "orders">("home");
