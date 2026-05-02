@@ -266,6 +266,16 @@ export default function BuyerFeed() {
                 </div>
               </div>
 
+              {/* Mall Discovery Banner */}
+              <Link href="/mall" className="mx-4 mt-4 flex items-center gap-4 bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl p-4 hover:shadow-lg transition">
+                <span className="text-4xl">🏬</span>
+                <div className="flex-1">
+                  <p className="text-white font-bold">Digital Malls</p>
+                  <p className="text-amber-100 text-xs">Shop from multiple local stores — one delivery!</p>
+                </div>
+                <span className="text-white font-bold">→</span>
+              </Link>
+
               {/* Best Offers */}
               {topOfferedProducts.length > 0 && (
                 <div className="px-4 mt-6">

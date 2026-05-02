@@ -6,7 +6,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 
-const ADMIN_EMAIL = "Palt51419@gmail.com";
+const ADMIN_EMAIL = "palt51419@gmail.com";
 
 type Product = { id: string; name: string; price: number; imageUrl: string; category?: string; sellerId: string; };
 type Order = { id: string; total: number; status: string; userId?: string; createdAt?: any; };
