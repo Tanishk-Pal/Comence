@@ -74,17 +74,31 @@ export default function BuyerFeed() {
   }, []);
 
   useEffect(() => {
+    if (!videoRefs.current.length) return;
+
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           const video = entry.target as HTMLVideoElement;
-          if (entry.isIntersecting) { video.play().catch(() => {}); }
-          else { video.pause(); }
+
+          if (entry.isIntersecting) {
+            video.play().catch(() => { });
+          } else {
+            video.pause();
+            video.currentTime = 0;
+          }
         });
       },
-      { threshold: 0.6 }
+      { threshold: 0.7 }
     );
-    videoRefs.current.forEach((v) => { if (v) observer.observe(v); });
+
+    videoRefs.current.forEach((video) => {
+      if (video) observer.observe(video);
+    });
+
+    // force first video play
+    videoRefs.current[0]?.play().catch(() => { });
+
     return () => observer.disconnect();
   }, [reels]);
 
@@ -142,23 +156,23 @@ export default function BuyerFeed() {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-zinc-200 shadow-sm px-4 py-3 flex items-center gap-3">
         <span className="text-xl font-bold text-zinc-900 flex-shrink-0">Com<span className="text-purple-500">ence</span></span>
         <div className="flex-1 flex items-center gap-2 bg-zinc-100 border border-zinc-300 hover:border-zinc-400 rounded-full px-4 py-2 shadow-sm transition">
-          <Search className="w-4 h-4 text-zinc-400 flex-shrink-0"/>
+          <Search className="w-4 h-4 text-zinc-400 flex-shrink-0" />
           <input type="text" placeholder="Search products..." value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && search.trim()) router.push(`/search?q=${encodeURIComponent(search)}`); }}
-            className="flex-1 bg-transparent text-sm text-zinc-900 placeholder-zinc-400 outline-none min-w-0"/>
+            className="flex-1 bg-transparent text-sm text-zinc-900 placeholder-zinc-400 outline-none min-w-0" />
           {search && <button onClick={() => setSearch("")} className="text-zinc-400 hover:text-zinc-600 text-lg leading-none">×</button>}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <Link href="/seller/dashboard" className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-3 py-1.5 rounded-full transition">Sell</Link>
           <button onClick={() => setTab("cart")} className="relative">
-            <ShoppingCart className="w-6 h-6 text-zinc-700"/>
+            <ShoppingCart className="w-6 h-6 text-zinc-700" />
             {items.length > 0 && (
               <span className="absolute -top-1 -right-1 bg-purple-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">{items.length}</span>
             )}
           </button>
           {userEmail ? (
-            <button onClick={() => setTab("profile")}><User className="w-6 h-6 text-zinc-500 hover:text-zinc-900"/></button>
+            <button onClick={() => setTab("profile")}><User className="w-6 h-6 text-zinc-500 hover:text-zinc-900" /></button>
           ) : (
             <Link href="/auth/login" className="bg-zinc-900 hover:bg-zinc-700 text-white text-xs font-semibold px-3 py-1.5 rounded-full transition">Login</Link>
           )}
@@ -191,7 +205,7 @@ export default function BuyerFeed() {
             {isAdmin && (
               <Link href="/admin/dashboard"
                 className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold bg-zinc-900 text-white hover:bg-zinc-700 transition">
-                <Settings className="w-4 h-4"/><span>Admin Panel</span>
+                <Settings className="w-4 h-4" /><span>Admin Panel</span>
               </Link>
             )}
           </div>
@@ -212,7 +226,7 @@ export default function BuyerFeed() {
                 <div className="absolute bottom-3 right-4 flex gap-1.5">
                   {BANNERS.map((_, i) => (
                     <button key={i} onClick={() => setBannerIndex(i)}
-                      className={`h-2 rounded-full transition-all ${i === bannerIndex ? "bg-white w-4" : "bg-white/40 w-2"}`}/>
+                      className={`h-2 rounded-full transition-all ${i === bannerIndex ? "bg-white w-4" : "bg-white/40 w-2"}`} />
                   ))}
                 </div>
               </div>
@@ -240,7 +254,7 @@ export default function BuyerFeed() {
                       <Link href={`/buyer/product/${p.id}`} key={p.id}
                         className="flex-shrink-0 w-44 bg-gradient-to-br from-red-50 to-orange-50 border border-red-200 rounded-2xl overflow-hidden hover:shadow-lg transition">
                         <div className="relative">
-                          <img src={p.imageUrl} alt={p.name} className="w-full h-28 object-cover"/>
+                          <img src={p.imageUrl} alt={p.name} className="w-full h-28 object-cover" />
                           <span className="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">{p.offer}% OFF</span>
                         </div>
                         <div className="p-2">
@@ -272,7 +286,7 @@ export default function BuyerFeed() {
               {/* Flash Deals */}
               <div className="px-4 mt-6">
                 <div className="flex items-center gap-2 mb-3">
-                  <Zap className="w-5 h-5 text-yellow-500"/>
+                  <Zap className="w-5 h-5 text-yellow-500" />
                   <p className="text-zinc-900 font-bold text-lg">Flash Deals</p>
                   <span className="ml-auto text-purple-600 text-sm font-semibold">See all →</span>
                 </div>
@@ -281,7 +295,7 @@ export default function BuyerFeed() {
                     <Link href={`/buyer/product/${p.id}`} key={p.id}>
                       <div className="bg-white border border-zinc-200 rounded-2xl p-3 hover:border-purple-400 hover:shadow-md transition">
                         <div className="relative mb-2">
-                          <img src={p.imageUrl} alt={p.name} className="w-full h-24 md:h-32 object-cover rounded-xl"/>
+                          <img src={p.imageUrl} alt={p.name} className="w-full h-24 md:h-32 object-cover rounded-xl" />
                           <span className="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">SALE</span>
                         </div>
                         <p className="text-zinc-900 text-xs font-semibold line-clamp-1">{p.name}</p>
@@ -299,7 +313,7 @@ export default function BuyerFeed() {
               {/* Trending Reels */}
               <div className="px-4 mt-6">
                 <div className="flex items-center gap-2 mb-3">
-                  <Play className="w-5 h-5 text-purple-600"/>
+                  <Play className="w-5 h-5 text-purple-600" />
                   <p className="text-zinc-900 font-bold text-lg">Trending Reels</p>
                   <button onClick={() => setTab("reels")} className="ml-auto text-purple-600 text-sm font-semibold">See all →</button>
                 </div>
@@ -307,7 +321,7 @@ export default function BuyerFeed() {
                   {reels.slice(0, 8).map((r) => (
                     <button key={r.id} onClick={() => setTab("reels")}
                       className="relative min-w-32 h-48 rounded-2xl overflow-hidden flex-shrink-0 bg-zinc-100 hover:scale-105 transition shadow-sm">
-                      <video src={r.videoUrl} muted playsInline className="w-full h-full object-cover"/>
+                      <video src={r.videoUrl} muted playsInline className="w-full h-full object-cover" />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end p-2">
                         <div>
                           <p className="text-white text-xs font-semibold line-clamp-1">{r.productName}</p>
@@ -315,7 +329,7 @@ export default function BuyerFeed() {
                         </div>
                       </div>
                       <div className="absolute top-2 right-2 bg-purple-600 rounded-full p-1.5">
-                        <Play className="w-3 h-3 text-white fill-white"/>
+                        <Play className="w-3 h-3 text-white fill-white" />
                       </div>
                     </button>
                   ))}
@@ -325,7 +339,7 @@ export default function BuyerFeed() {
               {/* All Products */}
               <div className="px-4 mt-6 pb-8">
                 <div className="flex items-center gap-2 mb-3">
-                  <Tag className="w-5 h-5 text-green-600"/>
+                  <Tag className="w-5 h-5 text-green-600" />
                   <p className="text-zinc-900 font-bold text-lg">{selectedCategory === "All" ? "All Products" : selectedCategory}</p>
                   <span className="text-zinc-400 text-sm">({filteredProducts.length})</span>
                 </div>
@@ -334,7 +348,7 @@ export default function BuyerFeed() {
                     <div key={p.id} className="bg-white border border-zinc-200 rounded-2xl overflow-hidden hover:shadow-lg hover:border-purple-300 transition">
                       <div className="relative">
                         <Link href={`/buyer/product/${p.id}`}>
-                          <img src={p.imageUrl} alt={p.name} className="w-full h-44 object-cover hover:opacity-90 transition"/>
+                          <img src={p.imageUrl} alt={p.name} className="w-full h-44 object-cover hover:opacity-90 transition" />
                         </Link>
                         <span className="absolute top-2 left-2 bg-green-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">In Stock</span>
                         {p.offer && <span className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{p.offer}% OFF</span>}
@@ -342,7 +356,7 @@ export default function BuyerFeed() {
                       <div className="p-3">
                         <p className="text-zinc-900 text-sm font-semibold line-clamp-1">{p.name}</p>
                         <p className="text-zinc-400 text-xs line-clamp-1 mb-1">{p.description}</p>
-                        <div className="flex gap-0.5 mb-2">{[1,2,3,4,5].map((s) => <Star key={s} className="w-3 h-3 text-yellow-400 fill-yellow-400"/>)}</div>
+                        <div className="flex gap-0.5 mb-2">{[1, 2, 3, 4, 5].map((s) => <Star key={s} className="w-3 h-3 text-yellow-400 fill-yellow-400" />)}</div>
                         <p className="text-purple-600 font-bold text-base mb-2">₹{p.price}</p>
                         <div className="flex gap-1.5">
                           <button onClick={() => handleAddToCart(p)} className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold py-2 rounded-xl transition">🛒 Cart</button>
@@ -359,54 +373,134 @@ export default function BuyerFeed() {
           {/* REELS TAB */}
           {tab === "reels" && (
             <div className="flex justify-center">
-              <div ref={reelContainerRef} className="w-full max-w-sm overflow-y-scroll"
-                style={{ height: "calc(100vh - 56px)", scrollSnapType: "y mandatory", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain" }}>
-                {reels.length === 0 && <div className="flex items-center justify-center h-full text-zinc-500">No reels yet!</div>}
-                {reels.map((reel, index) => {
-                  const isLiked = likedReels.has(reel.id);
-                  return (
-                    <div key={reel.id} className="relative bg-zinc-900"
-                      style={{ height: "calc(100vh - 56px)", scrollSnapAlign: "start", scrollSnapStop: "always", flexShrink: 0 }}>
-                      <video ref={(el) => { videoRefs.current[index] = el; }} src={reel.videoUrl} loop muted playsInline className="w-full h-full object-cover"/>
-                      <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"/>
-                      <div className="absolute right-3 bottom-48 flex flex-col items-center gap-5 z-10">
-                        <button onClick={() => handleLikeReel(reel)} className="flex flex-col items-center gap-1">
-                          <div className={`p-3 rounded-full transition ${isLiked ? "bg-red-500" : "bg-black/50"}`}>
-                            <span className="text-2xl">{isLiked ? "❤️" : "🤍"}</span>
+              <div
+                ref={reelContainerRef}
+                className="w-full max-w-sm overflow-y-scroll"
+                style={{
+                  height: "calc(100vh - 56px)",
+                  scrollSnapType: "y mandatory",
+                  WebkitOverflowScrolling: "touch",
+                  overscrollBehavior: "contain",
+                }}
+              >
+                {reels.length === 0 && (
+                  <div className="flex items-center justify-center h-full text-zinc-500">
+                    No reels yet!
+                  </div>
+                )}
+
+                {/* RESET refs BEFORE mapping */}
+                {(() => {
+                  videoRefs.current = [];
+
+                  return reels.map((reel, index) => {
+                    const isLiked = likedReels.has(reel.id);
+
+                    return (
+                      <div
+                        key={reel.id}
+                        className="relative bg-zinc-900"
+                        style={{
+                          height: "calc(100vh - 56px)",
+                          scrollSnapAlign: "start",
+                          scrollSnapStop: "always",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {/* VIDEO */}
+                        <video
+                          ref={(el) => {
+                            if (el) videoRefs.current[index] = el;
+                          }}
+                          src={reel.videoUrl}
+                          className="w-full h-full object-cover"
+                          loop
+                          muted
+                          autoPlay
+                          playsInline
+                          preload="auto"
+                        />
+
+                        {/* OVERLAY */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
+
+                        {/* RIGHT ACTIONS */}
+                        <div className="absolute right-3 bottom-48 flex flex-col items-center gap-5 z-10">
+                          <button
+                            onClick={() => handleLikeReel(reel)}
+                            className="flex flex-col items-center gap-1"
+                          >
+                            <div className={`p-3 rounded-full ${isLiked ? "bg-red-500" : "bg-black/50"}`}>
+                              <span className="text-2xl">{isLiked ? "❤️" : "🤍"}</span>
+                            </div>
+                            <span className="text-white text-xs font-bold">
+                              {reel.likes + (isLiked ? 1 : 0)}
+                            </span>
+                          </button>
+
+                          <button
+                            onClick={() => handleShareReel(reel)}
+                            className="flex flex-col items-center gap-1"
+                          >
+                            <div className="p-3 rounded-full bg-black/50">↗️</div>
+                            <span className="text-white text-xs font-bold">Share</span>
+                          </button>
+                        </div>
+
+                        {/* BOTTOM INFO */}
+                        <div className="absolute bottom-0 left-0 right-0 p-4 z-10">
+                          <p className="text-white font-bold text-sm mb-1">
+                            @{reel.sellerName}
+                          </p>
+                          <p className="text-zinc-300 text-xs mb-3">
+                            {reel.caption}
+                          </p>
+
+                          <div className="flex items-center gap-3 bg-white/10 backdrop-blur rounded-2xl p-3">
+                            <img
+                              src={reel.productImage}
+                              alt={reel.productName}
+                              className="w-12 h-12 rounded-xl object-cover"
+                            />
+
+                            <div className="flex-1">
+                              <p className="text-white text-sm font-bold">
+                                {reel.productName}
+                              </p>
+                              <p className="text-purple-400 font-bold">
+                                ₹{reel.price}
+                              </p>
+                            </div>
+
+                            <button
+                              onClick={() => {
+                                if (!userEmail) {
+                                  router.push("/auth/login");
+                                  return;
+                                }
+                                addItem({
+                                  id: reel.id,
+                                  name: reel.productName,
+                                  price: reel.price,
+                                  image: reel.productImage,
+                                  quantity: 1,
+                                });
+                                router.push("/buyer/checkout");
+                              }}
+                              className="bg-purple-600 text-white text-xs font-bold px-4 py-2 rounded-xl"
+                            >
+                              Buy ⚡
+                            </button>
                           </div>
-                          <span className="text-white text-xs font-bold">{reel.likes + (isLiked ? 1 : 0)}</span>
-                        </button>
-                        <button onClick={() => handleShareReel(reel)} className="flex flex-col items-center gap-1">
-                          <div className="p-3 rounded-full bg-black/50"><span className="text-2xl">↗️</span></div>
-                          <span className="text-white text-xs font-bold">Share</span>
-                        </button>
-                        <button className="flex flex-col items-center gap-1">
-                          <div className="p-3 rounded-full bg-black/50"><span className="text-2xl">💬</span></div>
-                          <span className="text-white text-xs font-bold">Chat</span>
-                        </button>
-                      </div>
-                      <div className="absolute bottom-0 left-0 right-0 p-4 z-10">
-                        <p className="text-white font-bold text-sm mb-1">@{reel.sellerName}</p>
-                        <p className="text-zinc-300 text-xs mb-3">{reel.caption}</p>
-                        <div className="flex items-center gap-3 bg-white/10 backdrop-blur rounded-2xl p-3">
-                          <img src={reel.productImage} alt={reel.productName} className="w-12 h-12 rounded-xl object-cover"/>
-                          <div className="flex-1">
-                            <p className="text-white text-sm font-bold">{reel.productName}</p>
-                            <p className="text-purple-400 font-bold">₹{reel.price}</p>
-                          </div>
-                          <button onClick={() => {
-                            if (!userEmail) { router.push("/auth/login"); return; }
-                            addItem({ id: reel.id, name: reel.productName, price: reel.price, image: reel.productImage, quantity: 1 });
-                            router.push("/buyer/checkout");
-                          }} className="bg-purple-600 text-white text-xs font-bold px-4 py-2 rounded-xl">Buy ⚡</button>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  });
+                })()}
               </div>
             </div>
           )}
+
 
           {/* MALL TAB */}
           {tab === "mall" && (
@@ -424,10 +518,10 @@ export default function BuyerFeed() {
             <div className="px-4 mt-4">
               <form onSubmit={(e) => { e.preventDefault(); if (search.trim()) router.push(`/search?q=${encodeURIComponent(search)}`); }}
                 className="flex items-center gap-2 bg-zinc-100 border border-zinc-300 rounded-full px-4 py-2.5 mb-4 shadow-sm">
-                <Search className="w-4 h-4 text-zinc-400 flex-shrink-0"/>
+                <Search className="w-4 h-4 text-zinc-400 flex-shrink-0" />
                 <input value={search} onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search products..."
-                  className="flex-1 bg-transparent text-sm text-zinc-900 placeholder-zinc-400 outline-none"/>
+                  className="flex-1 bg-transparent text-sm text-zinc-900 placeholder-zinc-400 outline-none" />
                 <button type="submit" className="bg-purple-600 text-white text-xs font-bold px-3 py-1 rounded-full">Go</button>
               </form>
               {search && <p className="text-zinc-400 text-sm mb-4">{filtered.length} results for "{search}"</p>}
@@ -435,7 +529,7 @@ export default function BuyerFeed() {
                 {(search ? filtered : products).map((p) => (
                   <div key={p.id} className="bg-white border border-zinc-200 rounded-2xl overflow-hidden hover:shadow-md hover:border-purple-300 transition">
                     <Link href={`/buyer/product/${p.id}`}>
-                      <img src={p.imageUrl} alt={p.name} className="w-full h-36 object-cover"/>
+                      <img src={p.imageUrl} alt={p.name} className="w-full h-36 object-cover" />
                     </Link>
                     <div className="p-3">
                       <p className="text-zinc-900 text-sm font-semibold line-clamp-1">{p.name}</p>
@@ -466,14 +560,14 @@ export default function BuyerFeed() {
                   <div className="flex-1">
                     {items.map((item) => (
                       <div key={item.id} className="flex gap-3 bg-white border border-zinc-200 rounded-2xl p-3 mb-3 shadow-sm">
-                        <img src={item.image} alt={item.name} className="w-20 h-20 rounded-xl object-cover"/>
+                        <img src={item.image} alt={item.name} className="w-20 h-20 rounded-xl object-cover" />
                         <div className="flex-1">
                           <p className="text-zinc-900 font-semibold">{item.name}</p>
                           <p className="text-purple-600 font-bold text-lg">₹{item.price}</p>
                           <p className="text-zinc-400 text-xs">Qty: {item.quantity}</p>
                         </div>
                         <button onClick={() => removeItem(item.id)} className="text-red-400 hover:text-red-500 self-start mt-1">
-                          <Trash2 className="w-5 h-5"/>
+                          <Trash2 className="w-5 h-5" />
                         </button>
                       </div>
                     ))}
@@ -525,7 +619,7 @@ export default function BuyerFeed() {
                       </div>
                       {order.items?.map((item: any, i: number) => (
                         <div key={i} className="flex items-center gap-3 mb-2">
-                          <img src={item.image} alt={item.name} className="w-12 h-12 rounded-xl object-cover bg-zinc-100"/>
+                          <img src={item.image} alt={item.name} className="w-12 h-12 rounded-xl object-cover bg-zinc-100" />
                           <div className="flex-1">
                             <p className="text-zinc-900 text-sm font-semibold">{item.name}</p>
                             <p className="text-zinc-400 text-xs">Qty: {item.quantity}</p>
@@ -605,12 +699,12 @@ export default function BuyerFeed() {
       {/* Bottom nav mobile */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-zinc-200 flex justify-around py-2 z-50 shadow-lg">
         {[
-          { id: "home", icon: <Home className="w-5 h-5"/>, label: "Home" },
-          { id: "reels", icon: <Play className="w-5 h-5"/>, label: "Reels" },
-          { id: "mall", icon: <Store className="w-5 h-5"/>, label: "Mall" },
-          { id: "search", icon: <Search className="w-5 h-5"/>, label: "Search" },
-          { id: "cart", icon: <ShoppingCart className="w-5 h-5"/>, label: "Cart" },
-          { id: "profile", icon: <User className="w-5 h-5"/>, label: "Profile" },
+          { id: "home", icon: <Home className="w-5 h-5" />, label: "Home" },
+          { id: "reels", icon: <Play className="w-5 h-5" />, label: "Reels" },
+          { id: "mall", icon: <Store className="w-5 h-5" />, label: "Mall" },
+          { id: "search", icon: <Search className="w-5 h-5" />, label: "Search" },
+          { id: "cart", icon: <ShoppingCart className="w-5 h-5" />, label: "Cart" },
+          { id: "profile", icon: <User className="w-5 h-5" />, label: "Profile" },
         ].map((t) => (
           <button key={t.id} onClick={() => setTab(t.id as typeof tab)}
             className={`flex flex-col items-center gap-0.5 transition ${tab === t.id ? "text-purple-600" : "text-zinc-400"}`}>
@@ -665,15 +759,15 @@ function MallPreview() {
 
       {/* Search */}
       <div className="flex items-center gap-2 bg-zinc-100 border border-zinc-300 rounded-full px-4 py-2 mb-4">
-        <Search className="w-4 h-4 text-zinc-400"/>
+        <Search className="w-4 h-4 text-zinc-400" />
         <input value={search} onChange={(e) => setSearch(e.target.value)}
           placeholder="Search Indore Mall, Bhopal Market..."
-          className="flex-1 bg-transparent text-sm text-zinc-900 placeholder-zinc-400 outline-none"/>
+          className="flex-1 bg-transparent text-sm text-zinc-900 placeholder-zinc-400 outline-none" />
       </div>
 
       {loading ? (
         <div className="flex flex-col gap-3">
-          {[1,2,3].map((i) => <div key={i} className="h-36 bg-zinc-100 rounded-2xl animate-pulse"/>)}
+          {[1, 2, 3].map((i) => <div key={i} className="h-36 bg-zinc-100 rounded-2xl animate-pulse" />)}
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-center mt-10 pb-8">
@@ -690,8 +784,8 @@ function MallPreview() {
             <Link href={`/mall/${c.id}`} key={c.id}>
               <div className="bg-white border border-zinc-200 rounded-2xl overflow-hidden hover:shadow-md hover:border-purple-300 transition">
                 <div className="relative h-36">
-                  <img src={c.imageUrl} alt={c.name} className="w-full h-full object-cover"/>
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent"/>
+                  <img src={c.imageUrl} alt={c.name} className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
                   <div className="absolute top-2 right-2">
                     <span className="bg-green-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">⚡ {c.deliveryDay}</span>
                   </div>
@@ -712,7 +806,7 @@ function MallPreview() {
           ))}
           <Link href="/seller/create-community"
             className="flex items-center justify-center gap-2 border-2 border-dashed border-purple-300 rounded-2xl p-4 text-purple-600 hover:bg-purple-50 transition">
-            <Plus className="w-5 h-5"/>
+            <Plus className="w-5 h-5" />
             <span className="font-semibold text-sm">Create New Mall</span>
           </Link>
         </div>
