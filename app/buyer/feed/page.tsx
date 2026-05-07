@@ -23,9 +23,23 @@ const BANNERS = [
 const ADMIN_EMAIL = "palt51419@gmail.com";
 
 export default function BuyerFeed() {
-  const [tab, setTab] = useState<"home" | "reels" | "mall" | "search" | "cart" | "profile" | "orders">("home");
-  const [products, setProducts] = useState<Product[]>([]);
+  const [tab, setTab] = useState<
+    "home" |
+    "reels" |
+    "mall" |
+    "search" |
+    "cart" |
+    "profile" |
+    "orders" |
+    "ai"
+  >("home"); const [products, setProducts] = useState<Product[]>([]);
   const [reels, setReels] = useState<Reel[]>([]);
+  const [showAI, setShowAI] = useState(false);
+  const [aiQuestion, setAiQuestion] = useState("");
+  const [messages, setMessages] = useState<
+    { role: "user" | "ai"; text: string }[]
+  >([]);
+  const [loadingAI, setLoadingAI] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
@@ -130,6 +144,60 @@ export default function BuyerFeed() {
     }
   };
 
+  const askAI = async () => {
+    if (!aiQuestion.trim()) return;
+
+    const userMessage = aiQuestion;
+
+    // ADD USER MESSAGE
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "user",
+        text: userMessage,
+      },
+    ]);
+
+    // CLEAR INPUT IMMEDIATELY
+    setAiQuestion("");
+
+    setLoadingAI(true);
+
+    try {
+      const res = await fetch("/api/tanx", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: userMessage,
+        }),
+      });
+
+      const data = await res.json();
+
+      // ADD AI MESSAGE
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "ai",
+          text: data.reply || "No response",
+        },
+      ]);
+    } catch (err) {
+      console.log(err);
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "ai",
+          text: "AI failed. Try again.",
+        },
+      ]);
+    }
+
+    setLoadingAI(false);
+  };
   const handleLogout = async () => {
     await signOut(auth);
     clearCart();
@@ -187,11 +255,18 @@ export default function BuyerFeed() {
             { id: "home", emoji: "🏠", label: "Home" },
             { id: "reels", emoji: "🎬", label: "Reels" },
             { id: "mall", emoji: "🏬", label: "Mall" },
+            { id: "ai", emoji: "🤖", label: "Tanx AI" },
             { id: "search", emoji: "🔍", label: "Search" },
             { id: "cart", emoji: "🛒", label: `Cart (${items.length})` },
             { id: "profile", emoji: "👤", label: "Profile" },
           ].map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id as typeof tab)}
+            <button key={t.id} onClick={() => {
+              if (t.id === "ai") {
+                setShowAI(true);
+              } else {
+                setTab(t.id as typeof tab);
+              }
+            }}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition text-left ${tab === t.id ? "bg-purple-600 text-white" : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"}`}>
               <span className="text-lg">{t.emoji}</span>
               <span>{t.label}</span>
@@ -643,6 +718,31 @@ export default function BuyerFeed() {
             </div>
           )}
 
+          {/* AI TAB */}
+          {tab === "ai" && (
+            <div className="flex items-center justify-center min-h-[80vh] px-4">
+              <div className="max-w-xl w-full bg-white border border-zinc-200 rounded-3xl p-8 text-center shadow-sm">
+                <div className="text-6xl mb-4">🤖</div>
+
+                <h2 className="text-3xl font-bold text-zinc-900 mb-2">
+                  Tanx AI Assistant
+                </h2>
+
+                <p className="text-zinc-500 mb-6">
+                  Ask product questions, compare items, know advantages,
+                  reviews, specifications and smart buying suggestions.
+                </p>
+
+                <button
+                  onClick={() => setShowAI(true)}
+                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-8 py-4 rounded-2xl transition"
+                >
+                  Open Tanx AI ⚡
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* PROFILE TAB */}
           {tab === "profile" && (
             <div className="px-4 mt-6 max-w-md mx-auto">
@@ -696,12 +796,118 @@ export default function BuyerFeed() {
         </div>
       </div>
 
+      {/* FLOATING TANX AI BUTTON */}
+      <button
+        onClick={() => setShowAI(true)}
+        className="fixed bottom-24 right-5 z-50 bg-gradient-to-r from-fuchsia-600 to-purple-600 text-white rounded-full shadow-2xl px-5 py-3 font-bold flex items-center gap-2 transition-all hover:scale-105"
+      >
+        🤖 Tanx
+      </button>
+
+      {/* AI PANEL */}
+      <div
+        className={`fixed top-0 right-0 h-full bg-white z-[100] shadow-2xl transition-all duration-300 border-l border-zinc-200
+  ${showAI ? "w-full md:w-[420px]" : "w-0 overflow-hidden"}
+  `}
+      >
+        <div className="flex flex-col h-full">
+
+          {/* HEADER */}
+          <div className="flex items-center justify-between p-4 border-b border-zinc-200">
+            <div>
+              <p className="font-bold text-xl">🤖 Tanx AI</p>
+              <p className="text-zinc-400 text-sm">
+                Smart Shopping Assistant
+              </p>
+            </div>
+
+            <button
+              onClick={() => setShowAI(false)}
+              className="text-2xl text-zinc-500 hover:text-black"
+            >
+              ×
+            </button>
+          </div>
+
+          {/* BODY */}
+          <div className="flex-1 overflow-y-auto p-4">
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
+              {messages.length === 0 && (
+                <div className="h-full flex items-center justify-center text-zinc-400 text-sm text-center px-6">
+                  Ask anything about products, gadgets, skincare, fashion, offers, comparisons...
+                </div>
+              )}
+
+              {messages.map((msg, index) => (
+                <div
+                  key={index}
+                  className={`flex ${msg.role === "user"
+                    ? "justify-end"
+                    : "justify-start"
+                    }`}
+                >
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap leading-6 ${msg.role === "user"
+                      ? "bg-purple-600 text-white"
+                      : "bg-zinc-100 text-zinc-800"
+                      }`}
+                  >
+                    {msg.text}
+                  </div>
+                </div>
+              ))}
+
+              {loadingAI && (
+                <div className="flex justify-start">
+                  <div className="bg-zinc-100 text-zinc-500 rounded-2xl px-4 py-3 text-sm">
+                    Tanx AI is thinking...
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="h-full flex items-center justify-center text-zinc-400 text-sm text-center px-6">
+              Ask anything about products, gadgets, skincare, fashion, offers, comparisons...
+            </div>
+
+          </div>
+
+
+          {/* INPUT */}
+          <div className="p-4 border-t border-zinc-200">
+
+            <textarea
+              value={aiQuestion}
+              onChange={(e) => setAiQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  askAI();
+                }
+              }}
+              placeholder="Ask Tanx AI..."
+              className="w-full h-24 resize-none border border-zinc-300 rounded-2xl p-4 outline-none focus:border-purple-500 text-sm"
+            />
+
+            <button
+              onClick={askAI}
+              disabled={loadingAI}
+              className="w-full mt-3 bg-gradient-to-r from-fuchsia-600 to-purple-600 text-white py-3 rounded-2xl font-bold"
+            >
+              {loadingAI ? "Thinking..." : "Ask Tanx AI ⚡"}
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Bottom nav mobile */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-zinc-200 flex justify-around py-2 z-50 shadow-lg">
         {[
           { id: "home", icon: <Home className="w-5 h-5" />, label: "Home" },
           { id: "reels", icon: <Play className="w-5 h-5" />, label: "Reels" },
           { id: "mall", icon: <Store className="w-5 h-5" />, label: "Mall" },
+          { id: "ai", icon: <Zap className="w-5 h-5" />, label: "Tanx" },
           { id: "search", icon: <Search className="w-5 h-5" />, label: "Search" },
           { id: "cart", icon: <ShoppingCart className="w-5 h-5" />, label: "Cart" },
           { id: "profile", icon: <User className="w-5 h-5" />, label: "Profile" },
